@@ -3,4 +3,5 @@ torchvision
 tqdm>=4.0
 pandas>=2.0
 matplotlib>=3.7
+ipympl>=0.9
 seaborn>=0.12

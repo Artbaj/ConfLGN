@@ -18,5 +18,6 @@ dependencies:
   - pandas
   - numpy
   - jupyter
+  - ipympl
   - wandb
   - gxx=13
