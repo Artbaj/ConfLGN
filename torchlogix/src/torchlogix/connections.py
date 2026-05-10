@@ -364,7 +364,7 @@ class FixedConvConnections(Connections):
         return self._get_indices_from_kernel_tensor(kernels)
 
 
-    def _get_random_receptive_field_tensor(self):
+    def _get_random_receptive_field_tensor(self): 
         """
         Random sampling (with replacement).
 
@@ -416,14 +416,25 @@ class FixedConvConnections(Connections):
                 )
                 num_positions = all_positions.shape[0]
 
-                idx = torch.randint(
-                    0, num_positions,
-                    (sample_size, self.lut_rank),
-                    device=device,
-                )
-
+                first_idx = torch.randint(0, num_positions, (self.lut_rank,), device=device)
+                first_pair = all_positions[first_idx]
+                anchor = first_pair[:, :2].float().mean(dim=0)
+                spatial = all_positions[:,:2].float()
+                dist2 = ((spatial - anchor) ** 2).sum(dim=1)
+                sigma = 1.5 #how wide the gaussian 
+                probs = torch.exp(-dist2 / (2 * sigma**2))
+                probs = probs / probs.sum()
+            
+                # Sample remaining pairs with Gaussian probability
+                remaining_idx = torch.multinomial(
+                    probs,
+                    num_samples=(sample_size - 1) * self.lut_rank,
+                    replacement=True,
+                ).view(sample_size - 1, self.lut_rank)
+            
+                idx = torch.cat([first_idx.view(1, self.lut_rank), remaining_idx], dim=0)
                 coords_k = all_positions[idx]
-
+                            
             else:
                 start = starts[k % num_groups]
                 c_rf = start + torch.arange(g, device=device)
