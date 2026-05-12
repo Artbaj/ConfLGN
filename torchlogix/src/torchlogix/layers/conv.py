@@ -65,6 +65,7 @@ class _LogicConvNd(LogicBase):
             connections=connections,
             connections_kwargs=connections_kwargs,
             )
+       
         self.num_kernels = num_kernels
         self.tree_depth = tree_depth
         self.channels = channels
@@ -72,6 +73,7 @@ class _LogicConvNd(LogicBase):
         assert conv_dimension in [2, 3], "conv_dimension must be 2 or 3"
         if conv_dimension == 2:
             self.receptive_field_size = _pair(receptive_field_size)
+            
             self.in_dim = _pair(in_dim)
         else:
             self.receptive_field_size = _triple(receptive_field_size)
@@ -85,6 +87,7 @@ class _LogicConvNd(LogicBase):
         self.stride = stride
         self.padding = padding
         self.tree_weights = self._init_weights()
+        
         self.connections = self._init_connections()
         
     def _init_weights(self):
@@ -104,10 +107,11 @@ class _LogicConvNd(LogicBase):
         return tree_weights
 
     def _init_connections(self):
+        
          # Setup connections
-        self.connections = setup_connections(
+        return setup_connections(
             structure="conv",
-            connections=self.connections,
+            connections=self.connections_name,
             lut_rank=self.lut_rank,
             device=self.device,
             in_dim=self.in_dim,
@@ -120,7 +124,6 @@ class _LogicConvNd(LogicBase):
             padding=self.padding,
             **self.connections_kwargs
         )
-        return self.connections
 
     def forward(self, x):
         """Applies the logic convolution to the input.
@@ -267,6 +270,7 @@ class LogicConv2d(_LogicConvNd):
             parametrization_kwargs=parametrization_kwargs,
             connections=connections,
             connections_kwargs=connections_kwargs,
+            
         )
 
 

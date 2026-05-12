@@ -16,6 +16,7 @@ def setup_connections(
     device: str = None,
     **connections_kwargs
 ):
+    
     """Factory method to create connection modules."""
     if structure == "dense":
         if connections == "fixed":
@@ -100,11 +101,13 @@ class FixedDenseConnections(Connections):
             init_method=init_method,
             **kwargs
         )
+      
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.indices = self._init_connections()
 
     def _init_connections(self):
+       
         """Constructs possible input–neuron connection indices.
 
         Each neuron takes ``lut_rank`` input features chosen out of ``lut_rank * num_candidates``
@@ -123,7 +126,7 @@ class FixedDenseConnections(Connections):
                 f"Need out_dim * lut_rank >= in_dim to cover all inputs "
                 f"({self.out_dim} * {self.lut_rank} < {self.in_dim})."
                 )
-
+        
         if self.init_method == "random":
             # With this method both inputs can stem from the same input feature
             c = torch.randperm(self.lut_rank * self.out_dim, 
@@ -213,6 +216,7 @@ class LearnableDenseConnections(Connections):
             init_method=init_method,
             **kwargs
         )
+       
         self.temperature = temperature
         self.num_candidates = num_candidates
         self.lut_rank = lut_rank
@@ -316,6 +320,7 @@ class FixedConvConnections(Connections):
             lut_rank=2, 
             device=None,
             init_method="random",  # | "random-unique"
+            sigma: float = 1.5,
             channel_group_size: int = None,
             **kwargs
         ):
@@ -325,6 +330,7 @@ class FixedConvConnections(Connections):
             init_method=init_method,
             **kwargs
         )
+       
         self.num_kernels = num_kernels
         self.tree_depth = tree_depth
         self.channels = channels
@@ -344,7 +350,9 @@ class FixedConvConnections(Connections):
         )        
         self.stride = stride
         self.padding = padding
+        self.sigma = float(sigma)
         self.channel_group_size = channel_group_size
+        assert self.sigma > 0, "sigma must be greater than 0"
         if channel_group_size is not None:
             assert channels > channel_group_size, (
                 "channel_group_size must be smaller than the number of channels"
@@ -353,9 +361,10 @@ class FixedConvConnections(Connections):
         
         
     def _init_connections(self):
+        
         # Setup connections
-        if self.init_method == "random":
-            kernels = self._get_random_receptive_field_tensor()
+        if self.init_method in {"random", "gaussian"}:
+            kernels = self._get_gaussian_receptive_field_tensor()
         elif self.init_method == "random-unique":
             kernels = self._get_random_unique_receptive_field_tensor()
         else:
@@ -364,18 +373,18 @@ class FixedConvConnections(Connections):
         return self._get_indices_from_kernel_tensor(kernels)
 
 
-    def _get_random_receptive_field_tensor(self): 
+    def _get_gaussian_receptive_field_tensor(self): 
         """
         Random sampling (with replacement).
 
         Returns:
             coords: (lut_rank, num_kernels, sample_size, 3)
         """
-
+        
         c = self.channels
         g = self.channel_group_size
         device = self.device
-
+       
         sample_size = self.lut_rank ** (self.tree_depth - 1)
         total_inputs = self.lut_rank * sample_size
 
@@ -421,7 +430,7 @@ class FixedConvConnections(Connections):
                 anchor = first_pair[:, :2].float().mean(dim=0)
                 spatial = all_positions[:,:2].float()
                 dist2 = ((spatial - anchor) ** 2).sum(dim=1)
-                sigma = 1.5 #how wide the gaussian 
+                sigma = self.sigma
                 probs = torch.exp(-dist2 / (2 * sigma**2))
                 probs = probs / probs.sum()
             
@@ -602,7 +611,7 @@ class FixedConvConnections(Connections):
 
         coords = torch.stack(coords_per_kernel, dim=0)
         coords = coords.permute(2, 0, 1, 3)
-
+        
         return coords
 
 

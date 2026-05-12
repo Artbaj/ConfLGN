@@ -104,16 +104,15 @@ class LogicDense(LogicBase):
 
     def _init_connections(self):
         """Constructs input–neuron connection indices."""
-        self.connections = setup_connections(
+        return setup_connections(
             structure="dense",
-            connections=self.connections,
+            connections=self.connections_name,
             lut_rank=self.lut_rank,
             device=self.device,
             in_dim=self.in_dim,
             out_dim=self.out_dim,
             **self.connections_kwargs
         )
-        return self.connections
         
     def get_luts_and_ids(self, **kwargs):
         """Computes the most probable LUT and its ID for each neuron.

@@ -40,7 +40,7 @@ class LogicBase(torch.nn.Module, ABC):
         self.device = device
         self.grad_factor = grad_factor
         self.lut_rank = lut_rank
-        self.connections = connections
+        self.connections_name = connections
         self.connections_kwargs = connections_kwargs or {}
 
     @abstractmethod
@@ -49,6 +49,7 @@ class LogicBase(torch.nn.Module, ABC):
 
     @abstractmethod
     def _init_connections(self, **kwargs):
+        
         pass
 
     @abstractmethod
