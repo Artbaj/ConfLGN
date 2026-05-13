@@ -18,6 +18,7 @@ class LogicNet(nn.Module):
         weight_init="random",
         init_method="gaussian",
         parametrization_temperature=1.0,         
+        channels =1
     ):
         super().__init__()
         logic_kwargs = {
