@@ -127,7 +127,7 @@ class FixedDenseConnections(Connections):
                 f"({self.out_dim} * {self.lut_rank} < {self.in_dim})."
                 )
         
-        if self.init_method == "random":
+        if self.init_method == "random" or self.init_method=="gaussian":
             # With this method both inputs can stem from the same input feature
             c = torch.randperm(self.lut_rank * self.out_dim, 
                                device=self.device) % self.in_dim
@@ -364,6 +364,7 @@ class FixedConvConnections(Connections):
         
         # Setup connections
         if self.init_method in {"random", "gaussian"}:
+            
             kernels = self._get_gaussian_receptive_field_tensor()
         elif self.init_method == "random-unique":
             kernels = self._get_random_unique_receptive_field_tensor()
@@ -380,7 +381,7 @@ class FixedConvConnections(Connections):
         Returns:
             coords: (lut_rank, num_kernels, sample_size, 3)
         """
-        
+      
         c = self.channels
         g = self.channel_group_size
         device = self.device

@@ -202,7 +202,7 @@ class RawLUTParametrization(LUTParametrization):
             weights = torch.zeros((num_neurons, 1 << lut_entries), device=device)
             weights[:, (1 << (1 << (self.lut_rank - 1))) - 1] = value * self.temperature
             return weights
-        elif self.weight_init == "random":
+        elif self.weight_init == "random" or self.weight_init=="gaussian":
             return torch.randn(num_neurons, 1 << lut_entries, device=device)
         raise ValueError(f"Unknown weight_init: {self.weight_init}")
 
