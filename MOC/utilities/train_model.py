@@ -19,6 +19,7 @@ def train_model(
     num_iterations=2500,
     metrics_every=100,
     force_cpu=False,
+    save = "best"
 ):
     device = torch.device(
         "cpu" if force_cpu else "cuda" if torch.cuda.is_available() else "cpu"
@@ -89,7 +90,7 @@ def train_model(
 
         running_loss += loss.item() * y.size(0)
         running_examples += y.size(0)
-
+        best_acc =0
         if step % metrics_every == 0:
             disc_loss, disc_acc = evaluate(test_loader, train_mode=False)
             relax_loss, relax_acc = evaluate(test_loader, train_mode=True)
