@@ -100,7 +100,22 @@ def train_model(
             test_loss_acc["test_loss_discrete"].append(disc_loss)
             test_loss_acc["test_acc_relaxed"].append(relax_acc)
             test_loss_acc["test_loss_relaxed"].append(relax_loss)
+            match save:
+              case "None":
+                  pass
 
+              case "best":
+                  if disc_acc > best_acc:
+                      best_acc = disc_acc
+                      torch.save(model.state_dict(), "logicnet_bloodmnist_best.pth")
+                      
+
+              case "last":
+                  torch.save(model.state_dict(), "logicnet_bloodmnist_last.pth")
+                  
+
+              case _:
+                  raise ValueError(f"Unknown save mode: {save}")
             print(
                 f"iter {step:4d} | "
                 f"train_loss {train_loss:.4f} | "
