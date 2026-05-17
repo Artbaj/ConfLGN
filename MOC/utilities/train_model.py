@@ -3,7 +3,7 @@ import os
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import torch
-
+import torchlogix
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import torch.nn as nn
