@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torchlogix.layers import LogicDense, LogicConv2d, GroupSum
 from torchlogix import CompiledLogicNet
-from torchlogix.hdl_generator import gate_id_to_verilog, GATE_TRUTH_TABLES
+from torchlogix.compiler.hdl.hdl_generator import gate_id_to_verilog, GATE_TRUTH_TABLES
 
 
 class TestGateMappings:

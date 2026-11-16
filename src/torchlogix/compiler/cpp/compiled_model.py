@@ -10,11 +10,11 @@ import numpy as np
 import numpy.typing
 import torch
 
-from .layers.conv import LogicConv2d, LogicConv3d
-from .layers.pool import OrPooling2d, OrPooling3d
-from .layers.dense import LogicDense
-from .layers.groupsum import GroupSum
-from .layers.binarization import Binarization
+from ...layers.conv import LogicConv2d, LogicConv3d
+from ...layers.pool import OrPooling2d, OrPooling3d
+from ...layers.dense import LogicDense
+from ...layers.groupsum import GroupSum
+from ...layers.binarization import Binarization
 
 
 ALL_OPERATIONS = [
@@ -276,7 +276,7 @@ class CompiledLogicNet(torch.nn.Module):
         Returns:
             Verilog expression string
         """
-        from .hdl_generator import gate_id_to_verilog
+        from ..hdl.hdl_generator import gate_id_to_verilog
         print(f"gate_op = {gate_op}, var1={var1}, var2={var2}")
         print(f"type of gate_op: {type(gate_op)}")
         return gate_id_to_verilog(gate_op, var1, var2)
@@ -785,7 +785,7 @@ class CompiledLogicNet(torch.nn.Module):
         Returns:
             List of Verilog code lines (wire declarations and assignments)
         """
-        from .hdl_generator import format_verilog_comment
+        from ..hdl.hdl_generator import format_verilog_comment
 
         code = []
         code.append("")
@@ -817,7 +817,7 @@ class CompiledLogicNet(torch.nn.Module):
         Returns:
             List of Verilog code lines (wire declarations and assignments)
         """
-        from .hdl_generator import format_verilog_comment
+        from ..hdl.hdl_generator import format_verilog_comment
 
         code = []
         code.append("")
@@ -1402,7 +1402,7 @@ void apply_logic_net({inp_dtype} const *inp, {out_dtype} *out, size_t len) {{
             # Full layer-level pipelining (register between each layer)
             verilog = model.get_verilog_code(pipeline_stages=999)  # or len(layers)
         """
-        from .hdl_generator import (generate_verilog_module, format_verilog_comment,
+        from ..hdl.hdl_generator import (generate_verilog_module, format_verilog_comment,
                                     generate_pipeline_register)
         import numpy as np
 

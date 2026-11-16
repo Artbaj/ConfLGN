@@ -3,11 +3,10 @@ import os
 # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import torch
-import torchlogix
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import torch.nn as nn
-from torchlogix.layers import LogicConv2d, LogicDense, OrPooling2d, GroupSum
+from ..layers import LogicConv2d, LogicDense, OrPooling2d, GroupSum
 
 __all__ = ["train_model", "evaluate_model", "evaluate_one_iteration"]
 

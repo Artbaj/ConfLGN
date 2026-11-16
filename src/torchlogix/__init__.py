@@ -1,6 +1,6 @@
 """The main package for torchlogix."""
 
-from .compiled_model import CompiledLogicNet
+from .compiler.cpp.compiled_model import CompiledLogicNet
 from .packbitstensor import PackBitsTensor
 from . import layers
 

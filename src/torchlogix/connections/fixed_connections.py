@@ -1,82 +1,19 @@
 from typing import Union
-from abc import ABC, abstractmethod
 import itertools
 
 import torch
 from torch.nn.common_types import _size_2_t, _size_3_t
 from torch.nn.modules.utils import _pair, _triple
 
-from .functional import softmax, take_tuples, get_combination_indices
-    
-
-def setup_connections(
-    connections: str,
-    structure: str,
-    lut_rank: int,
-    device: str = None,
-    **connections_kwargs
-):
-    
-    """Factory method to create connection modules."""
-    if structure == "dense":
-        if connections == "fixed":
-            return FixedDenseConnections(
-                lut_rank=lut_rank,
-                device=device,
-                **connections_kwargs
-            )
-        elif connections == "learnable":
-            return LearnableDenseConnections(
-                lut_rank=lut_rank,
-                device=device,
-                **connections_kwargs
-            )
-        else:
-            raise ValueError(f"Unknown connections method: {connections}")
-    elif structure == "conv":
-        if connections == "fixed":
-            return FixedConvConnections(
-                lut_rank=lut_rank,
-                device=device,
-                **connections_kwargs
-            )
-        else:
-            raise ValueError(f"Unknown connections method: {connections}")
-    else:
-        raise ValueError(f"Unknown structure method: {structure}")
-    
-
-class Connections(torch.nn.Module, ABC):
-    """Abstract base class for connection strategies."""
-    def __init__(
-            self,
-            lut_rank=2,
-            device=None,
-            init_method="random",
-            **kwargs
-        ):
-        super().__init__()
-        self.lut_rank = lut_rank
-        self.device = device
-        self.init_method = init_method
-
-    @abstractmethod
-    def forward(self, x):
-        pass
-
-    @abstractmethod
-    def _init_connections(self):
-        pass
-
-    def update_temperature(self, temperature: float):
-        pass
+from .base import Connections
+from ..functional import take_tuples
 
 
 class FixedDenseConnections(Connections):
     """Fixed dense connections implementation.
     Each neuron connects to ``lut_rank`` input features chosen from the input dimension.
     The connections are fixed after initialization.
-    
+
     Args:
         in_dim: Input feature dimension.
         out_dim: Number of neurons (output dimension).
@@ -87,10 +24,10 @@ class FixedDenseConnections(Connections):
             - "random-unique": Randomly select unique input features (without replacement).
     """
     def __init__(
-            self, 
-            in_dim, 
-            out_dim, 
-            lut_rank=2, 
+            self,
+            in_dim,
+            out_dim,
+            lut_rank=2,
             device=None,
             init_method="random",
             **kwargs
@@ -101,17 +38,17 @@ class FixedDenseConnections(Connections):
             init_method=init_method,
             **kwargs
         )
-      
+
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.indices = self._init_connections()
 
     def _init_connections(self):
-       
+
         """Constructs possible input–neuron connection indices.
 
         Each neuron takes ``lut_rank`` input features chosen out of ``lut_rank * num_candidates``
-        possibilities. This function returns a tensor encoding which input indices are connected 
+        possibilities. This function returns a tensor encoding which input indices are connected
         to which neuron.
 
         Returns:
@@ -126,10 +63,10 @@ class FixedDenseConnections(Connections):
                 f"Need out_dim * lut_rank >= in_dim to cover all inputs "
                 f"({self.out_dim} * {self.lut_rank} < {self.in_dim})."
                 )
-        
+
         if self.init_method == "random" or self.init_method=="gaussian":
             # With this method both inputs can stem from the same input feature
-            c = torch.randperm(self.lut_rank * self.out_dim, 
+            c = torch.randperm(self.lut_rank * self.out_dim,
                                device=self.device) % self.in_dim
             c = c.reshape(self.lut_rank, self.out_dim)
         elif self.init_method == "random-unique":
@@ -142,144 +79,10 @@ class FixedDenseConnections(Connections):
             raise ValueError(self.init_method)
         c = c.contiguous().to(torch.int64).to(self.device)
         return c
-    
+
     def forward(self, x):
         return x[:, self.indices]
-    
 
-class LearnableConnectionFunction(torch.autograd.Function):
-    """Autograd function for learnable connections.
-    Implements the forward and backward pass for learnable connections
-    using Gumbel-Softmax for differentiable sampling.
-    """
-    @staticmethod
-    def forward(ctx, x, weights, tau, gumbel, indices):
-        if gumbel:
-            u = torch.rand_like(weights)
-            g = -torch.log(-torch.log(u + 1e-20) + 1e-20)
-        else:
-            g = torch.zeros_like(weights)
-        connections = (weights + g).argmax(dim=0)
-        l = torch.arange(weights.shape[1], device=x.device).unsqueeze(1)
-        o = torch.arange(weights.shape[2], device=x.device).unsqueeze(0)
-        output = x[:, indices[connections, l, o]]
-        ctx.save_for_backward(x, weights, tau, g, indices)
-        return output
-
-    @staticmethod
-    def backward(ctx, output_grad):
-        x, weights, tau, g, indices = ctx.saved_tensors
-        # compute gradient w.r.t. to learnable weights
-        weights_grad = torch.einsum("bclo,blo->clo", 2*x[:,indices]-1, output_grad)
-        # compute gradient w.r.t. to input with sparse scatter_add method
-        input_grad = torch.zeros_like(x)
-        temp = softmax((weights + g)/tau, dim=0).unsqueeze(0) * output_grad.unsqueeze(1)
-        input_grad.scatter_add_(dim=1, 
-                                index=indices.expand(x.shape[0], -1, -1, -1).reshape(x.shape[0], -1),
-                                src=temp.reshape(x.shape[0], -1))
-        return input_grad, weights_grad, None, None, None
-    
-
-class LearnableDenseConnections(Connections):
-    """Learnable dense connections implementation.
-    Each neuron connects to ``lut_rank`` input features chosen from a set of candidates.
-    The connections are learnable parameters optimized during training.
-
-    Args:
-        in_dim: Input feature dimension.
-        out_dim: Number of neurons (output dimension).
-        lut_rank: Number of input features each neuron connects to.
-        temperature: Temperature parameter for Gumbel-Softmax.
-        num_candidates: Number of candidate input features per neuron.
-            If -1, all input features are candidates.
-        gumbel: Whether to use Gumbel noise for sampling.
-        device: Device to store the connection indices tensor.
-        init_method: Method to initialize connections. Options are:
-            - "random": Randomly select input features (with replacement).
-            - "random-unique": Randomly select unique input features (without replacement).
-    """
-    def __init__(
-            self, 
-            in_dim, 
-            out_dim, 
-            lut_rank=2, 
-            temperature=0.001,
-            num_candidates=-1, 
-            gumbel=False,
-            device=None,
-            init_method="random",
-            **kwargs
-        ):
-        super().__init__(
-            lut_rank=lut_rank,
-            device=device,
-            init_method=init_method,
-            **kwargs
-        )
-       
-        self.temperature = temperature
-        self.num_candidates = num_candidates
-        self.lut_rank = lut_rank
-        self.in_dim = in_dim
-        self.out_dim = out_dim
-        self.device = device
-        self.gumbel = gumbel
-        if num_candidates == -1:
-            num_candidates = in_dim
-            self.num_candidates = num_candidates
-            self.indices = torch.arange(in_dim, device=self.device).view(
-                in_dim, 1, 1).expand(in_dim, lut_rank, out_dim)
-        else:
-            assert num_candidates > 0, "num_candidates must be bigger than 0"
-            self.num_candidates = num_candidates
-            self.indices = self._init_connections()
-        self.weights = torch.nn.Parameter(torch.rand(
-            num_candidates, lut_rank, out_dim, dtype=torch.float32), requires_grad=True)
-        
-    def update_temperature(self, temperature: float):
-        self.temperature = temperature
-        
-    def forward(self, x):
-        return LearnableConnectionFunction.apply(x, self.weights, torch.tensor(self.temperature), 
-                                                 self.gumbel, self.indices)
-    
-    def _init_connections(self):
-        """Constructs possible input–neuron connection indices.
-
-        Each neuron takes ``lut_rank`` input features chosen out of ``lut_rank * num_candidates``
-        possibilities. This function returns a tensor encoding which input indices are connected 
-        to which neuron.
-
-        Returns:
-            A tensor of shape ``(num_candidates, lut_rank, out_dim)`` with integer indices into
-            the last dimension of the input.
-        """
-        assert self.in_dim >= self.num_candidates * self.lut_rank, (
-            f"Cannot have num_candidates * lut_rank > in_dim "
-            f"({self.num_candidates * self.lut_rank} > {self.in_dim})"
-        )
-        assert self.out_dim * self.lut_rank >= self.in_dim, (
-                f"Need out_dim * lut_rank >= in_dim to cover all inputs "
-                f"({self.out_dim} * {self.lut_rank} < {self.in_dim})."
-                )
-
-        if self.init_method == "random":
-            # With this method both inputs can stem from the same input feature
-            c = torch.randperm(self.lut_rank * self.out_dim * self.num_candidates, 
-                               device=self.device) % self.in_dim
-            c = c.reshape(self.num_candidates, self.lut_rank, self.out_dim)
-        elif self.init_method == "random-unique":
-            c = get_random_unique_connections(
-                in_dim=self.in_dim,
-                out_dim=self.out_dim,
-                n=self.lut_rank*self.num_candidates
-            )
-            c = c.reshape(self.num_candidates, self.lut_rank, self.out_dim)
-        else:
-            raise ValueError(self.connections)
-        c = c.contiguous().to(torch.int64).to(self.device)
-        return c
-    
 
 def get_random_unique_connections(in_dim, out_dim, n):
     # Feasibility check
@@ -308,7 +111,7 @@ class FixedConvConnections(Connections):
     Each convolutional kernel connects to input features within its receptive field.
     The connections are fixed after initialization."""
     def __init__(
-            self, 
+            self,
             in_dim: Union[_size_2_t, _size_3_t, int],
             channels: int = 1,
             num_kernels: int = 16,
@@ -317,7 +120,7 @@ class FixedConvConnections(Connections):
             stride: int = 1,
             padding: int = 0,
             conv_dimension: int = 2,
-            lut_rank=2, 
+            lut_rank=2,
             device=None,
             init_method="random",  # | "random-unique"
             sigma: float = 1.5,
@@ -330,7 +133,7 @@ class FixedConvConnections(Connections):
             init_method=init_method,
             **kwargs
         )
-       
+
         self.num_kernels = num_kernels
         self.tree_depth = tree_depth
         self.channels = channels
@@ -347,7 +150,7 @@ class FixedConvConnections(Connections):
         ), (
             f"Stride ({stride}) cannot be larger than "
             f"receptive field size ({receptive_field_size})"
-        )        
+        )
         self.stride = stride
         self.padding = padding
         self.sigma = float(sigma)
@@ -358,13 +161,13 @@ class FixedConvConnections(Connections):
                 "channel_group_size must be smaller than the number of channels"
             )
         self.indices = self._init_connections()
-        
-        
+
+
     def _init_connections(self):
-        
+
         # Setup connections
         if self.init_method in {"random", "gaussian"}:
-            
+
             kernels = self._get_gaussian_receptive_field_tensor()
         elif self.init_method == "random-unique":
             kernels = self._get_random_unique_receptive_field_tensor()
@@ -374,18 +177,18 @@ class FixedConvConnections(Connections):
         return self._get_indices_from_kernel_tensor(kernels)
 
 
-    def _get_gaussian_receptive_field_tensor(self): 
+    def _get_gaussian_receptive_field_tensor(self):
         """
         Random sampling (with replacement).
 
         Returns:
             coords: (lut_rank, num_kernels, sample_size, 3)
         """
-      
+
         c = self.channels
         g = self.channel_group_size
         device = self.device
-       
+
         sample_size = self.lut_rank ** (self.tree_depth - 1)
         total_inputs = self.lut_rank * sample_size
 
@@ -434,17 +237,17 @@ class FixedConvConnections(Connections):
                 sigma = self.sigma
                 probs = torch.exp(-dist2 / (2 * sigma**2))
                 probs = probs / probs.sum()
-            
+
                 # Sample remaining pairs with Gaussian probability
                 remaining_idx = torch.multinomial(
                     probs,
                     num_samples=(sample_size - 1) * self.lut_rank,
                     replacement=True,
                 ).view(sample_size - 1, self.lut_rank)
-            
+
                 idx = torch.cat([first_idx.view(1, self.lut_rank), remaining_idx], dim=0)
                 coords_k = all_positions[idx]
-                            
+
             else:
                 start = starts[k % num_groups]
                 c_rf = start + torch.arange(g, device=device)
@@ -489,8 +292,8 @@ class FixedConvConnections(Connections):
         coords = coords.permute(2, 0, 1, 3)
 
         return coords
-    
-    
+
+
     def _get_random_unique_receptive_field_tensor(self):
         """
         Random unique sampling (without replacement across tuples).
@@ -612,7 +415,7 @@ class FixedConvConnections(Connections):
 
         coords = torch.stack(coords_per_kernel, dim=0)
         coords = coords.permute(2, 0, 1, 3)
-        
+
         return coords
 
 
@@ -641,7 +444,7 @@ class FixedConvConnections(Connections):
         )
 
         # Sliding positions
-        starts = [torch.arange(0, p - rcf + 1, self.stride, device=self.device) 
+        starts = [torch.arange(0, p - rcf + 1, self.stride, device=self.device)
                   for p, rcf in zip(padded, self.receptive_field_size)]
         #h_starts = torch.arange(0, padded[0] - self.receptive_field_size[0] + 1, self.stride, device=self.device)
         #w_starts = torch.arange(0, padded[1] - self.receptive_field_size[1] + 1, self.stride, device=self.device)
@@ -662,7 +465,7 @@ class FixedConvConnections(Connections):
         c_base = pairs_all[..., -1]
 
         # Add sliding-window offsets (broadcasted) → (K, P, L, S)
-        idx = [b.unsqueeze(1) + o.view(1, num_positions[0], 1, 1) 
+        idx = [b.unsqueeze(1) + o.view(1, num_positions[0], 1, 1)
                for b, o in zip(base, offsets)]
         c_idx = c_base.unsqueeze(1).expand(-1, num_positions[0], -1, -1)
 
@@ -684,10 +487,10 @@ class FixedConvConnections(Connections):
             base = torch.arange(size, device=self.device).view(-1, self.lut_rank).transpose(0, 1)
             indices.append(base)
         return indices
-    
+
     def forward(self, x, tree_level):
         if tree_level == 0:
-            return x[(slice(None), self.indices[0][..., -1], 
+            return x[(slice(None), self.indices[0][..., -1],
               *self.indices[0][..., :-1].moveaxis(-1, 0))]
         else:
             return x[..., self.indices[tree_level]]

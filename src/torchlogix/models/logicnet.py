@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 import torch.nn as nn
-from torchlogix.layers import LogicConv2d, LogicDense, OrPooling2d, GroupSum
+from ..layers import LogicConv2d, LogicDense, OrPooling2d, GroupSum
 class LogicNet(nn.Module):
     def __init__(self,
         num_classes=10,
